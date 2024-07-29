@@ -11,7 +11,7 @@ def translate(transcript):
 
     # Standard codon table adapted from Wikipedia.
     # Saved in https://github.com/grtakaha/useful_things.
-    # Stop codons represented by "*".
+    # Stop codons represented by "-".
     codons = {
         "TTT":"F", "TTC":"F", "TTA":"L", "TTG":"L",
         "CTT":"L", "CTC":"L", "CTA":"L", "CTG":"L",
@@ -21,7 +21,7 @@ def translate(transcript):
         "CCT":"P", "CCC":"P", "CCA":"P", "CCG":"P",
         "ACT":"T", "ACC":"T", "ACA":"T", "ACG":"T",
         "GCT":"A", "GCC":"A", "GCA":"A", "GCG":"A",
-        "TAT":"Y", "TAC":"Y", "TAA":"*", "TAG":"*",
+        "TAT":"Y", "TAC":"Y", "TAA":"-", "TAG":"*",
         "CAT":"H", "CAC":"H", "CAA":"Q", "CAG":"Q",
         "AAT":"N", "AAC":"N", "AAA":"K", "AAG":"K",
         "GAT":"D", "GAC":"D", "GAA":"E", "GAG":"E",
@@ -32,11 +32,17 @@ def translate(transcript):
         }    
     
     protein = ""
-    for n in transcript:
-        aa = codons.get(n)
-        # If this is not a recognized codon, then use "_" as a placeholder.
-        if not aa:
-            aa = "_"
-        protein += aa
-    
+    caps_transcript = transcript.upper()
+    i = 0
+    while i < len(transcript):
+        codon = caps_transcript[i:i+3]
+        # Won't output anything for the end of the sequence if it's not a multiple of 3.
+        if len(codon) == 3:
+            aa = codons.get(codon)
+            # If this is not a recognized codon, then use "_" as a placeholder.
+            if not aa:
+                aa = "_"
+            protein += aa
+        i += 3
+
     return protein
