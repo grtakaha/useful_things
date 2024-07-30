@@ -1,12 +1,12 @@
 def translate(transcript):
     """
-    Takes in a nucleotide (DNA - T, not U) transcript and returns its protein translation.
+    Takes in a nucleotide transcript and returns its protein translation.
 
         Parameters:
-            transcript (str): Transcript in DNA nucleotides (T, not U).
+            transcript (str): Nucleotide transcript to be translated.
 
         Returns:
-            protein (str): Protein translation of transcript.
+            protein (str): Standard protein translation of transcript.
     """
 
     # Standard codon table adapted from Wikipedia.
@@ -32,10 +32,11 @@ def translate(transcript):
         }    
     
     protein = ""
-    caps_transcript = transcript.upper()
+    # Capitalize transcript and replace "U" with "T".
+    mod_transcript = transcript.upper().replace("U", "T")
     i = 0
     while i < len(transcript):
-        codon = caps_transcript[i:i+3]
+        codon = mod_transcript[i:i+3]
         # Won't output anything for the end of the sequence if it's not a multiple of 3.
         if len(codon) == 3:
             aa = codons.get(codon)
