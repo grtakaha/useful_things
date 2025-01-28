@@ -89,6 +89,13 @@ def fasta_to_df(file):
                 seqs[-1] += line.strip()
     return pd.DataFrame({"Accession": accessions, "IDs": ids, "Sequence": seqs}).set_index("IDs")
 
+def find_description(json):
+    json_description = json.get("proteinDescription")
+    rec_name = json_description.get("recommendedName")
+    description = rec_name.get("fullName").get("value")
+    
+    return description
+
 def parse_json(json, ec_source):
     ec_nums = []
 
@@ -127,7 +134,7 @@ def parse_json(json, ec_source):
                     ec_nums.append(reaction.get("ecNumber"))
                     #print(ec_nums)
         print(f"comments:{comments}\nec_nums:{ec_nums}\n\n",
-              flush=True)        
+              flush=True)
     else:
         print(f"{ec_source} is not a valid ec_source...\n\n",
               flush=True)
@@ -205,18 +212,19 @@ def parse_args():
     #parser.add_argument("-pfc", "--pos_log2foldchange", type=int,
                         #help="Log2FoldChange threshold for upregulated proteins.",
                         #default=1)
-    parser.add_argument("-sit", "--subject_identity_threshold", type=int,
-                        help="Percent cutoff for reporting BLAST hits based on "+
-                        "number of identical residues, divided by full subject length.",
-                        default=50)
+    #parser.add_argument("-sit", "--subject_identity_threshold", type=int,
+                        #help="Percent cutoff for reporting BLAST hits based on "+
+                        #"number of identical residues, divided by full subject length.",
+                        #default=50)
     parser.add_argument("-o", "--out_directory", type=str,
                         help="Full path of output directory. Must end with \"/\".")
     
     return parser.parse_args()
 
-def write_log(log_path, string):
-    with open(log_path, "a", encoding="utf-8") as log:
-        log.write(string)
+#def write_log(log_path, string):
+  
+    #with open(log_path, "a", encoding="utf-8") as log:
+        #log.write(string)
 
 def main(args):
     """
@@ -229,15 +237,22 @@ def main(args):
             TSV of transcript (gene) hits
             FASTAs of transcript hits
     """
-    current_time = datetime.datetime.now()
+    current_time = str(datetime.datetime.now()).replace("-", "").replace(" ", "_").replace(":", "")
     out_directory = find_path(args.out_directory, action="w", path_type="d")
     script_name = ".".join(__file__.split("/")[-1].split(".")[:-1])
     log_path = find_path(f"{out_directory}/{script_name}.{current_time}.log",
                          action="w", path_type="f")
+    # This is a little sketchy, but it redirects all stdout (including session_info) to log_path.
+    # There is no other use of log_path here... consider doing something like this in other files...
+    # Maybe ask user if stdout should be redirected or not.
+    sys.stdout = open(log_path, 'w')
 
+    session_info.show() # Prints to stdout
+    print("\n")
+    
     # TODO: Make log file include all version information for Python and libraries
-    with open(log_path, "w", encoding="utf-8") as log:
-        log.write(f"{session_info.show()}\n")
+    #with open(log_path, "w", encoding="utf-8") as log:
+        #log.write(f"{str(session_info.show())}\n")
 
     blast_results_file = find_path(args.blast_results, action="r", path_type="f")
     blast_results_filename = blast_results_file.split("/")[-1]
@@ -266,15 +281,20 @@ def main(args):
     transcripts_df = fasta_to_df(transcripts_file)
     print(transcripts_df)
     
+    out_directory = find_path(args.out_directory, action="w", path_type="d")
+    print("\nInputs:\n") # Prints a newline
+    print(f"blast_results: {blast_results_file}\ntranscripts: {transcripts_file}")
+    print(f"out_directory: {out_directory}\n")    
+    
     # TODO: parse current_time
-    hit_results_file = find_path(f"{args.out_directory}/EC_results.{current_time}.tsv", action="w", path_type="f")
+    hit_results_file = find_path(f"{out_directory}/EC_results.{current_time}.tsv", action="w", path_type="f")
 
-    blast_hits_directory = find_path(f"{args.out_directory}/blast_hits/", action="w", path_type="d")
+    #blast_hits_directory = find_path(f"{args.out_directory}/blast_hits/", action="w", path_type="d")
 
     with open(hit_results_file, "w", encoding="utf-8") as hit_results:
         #hit_results.write("gene\ttranscript\tsubject\tsubject_description\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
         #hit_results.write(f"gene\ttranscript\tsubject\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
-        hit_results.write(f"gene\ttranscript\tsubject\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
+        hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
 
 
         # {gene1: {features}, gene2: {features}}
@@ -358,11 +378,12 @@ def main(args):
             json = get_metadata(subject.split("|")[-1])
 
             if json:
+                subject_description = find_description(json)                
                 rec_ec_nums = parse_json(json, "recommended")
                 dom_ec_nums = parse_json(json, "domain")
                 rhea_ec_nums = parse_json(json, "rhea")
 
-            hit_results.write(f"{gene}\t{transcript}\t{subject}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\n")
+            hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\n")
             
             #if perc_sidentity > args.subject_identity_threshold:
                 #if log2FC != "-":
