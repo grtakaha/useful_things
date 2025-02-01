@@ -345,7 +345,7 @@ def main(args):
                     rec_ec_nums = parse_json(json, "recommended")
                     dom_ec_nums = parse_json(json, "domain")
                     rhea_ec_nums = parse_json(json, "rhea")
-                
+
                 hit_dict[subject] = {"subject_description":subject_description,
                                      "rec_ec_nums":rec_ec_nums,
                                      "dom_ec_nums":dom_ec_nums,
