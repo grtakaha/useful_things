@@ -325,10 +325,10 @@ def main(args):
             nident = int(blast_results_df.iloc[i]["nident"])
             slen = int(blast_results_df.iloc[i]["slen"])
             perc_sidentity = nident / slen * 100
-            qlen_nt = int(blast_results.df.iloc[i]["qlen"])
+            qlen_nt = int(blast_results_df.iloc[i]["qlen"])
             max_qlen_aa = int(qlen_nt / 3)
             perc_qidentity = nident / max_qlen_aa * 100
-            align_len = int(blast_results.df.iloc[i]["length"])
+            align_len = int(blast_results_df.iloc[i]["length"])
             qcover = align_len / max_qlen_aa * 100
 
             print("BLAST result:", flush=True)
