@@ -229,14 +229,20 @@ def parse_args():
 def main(args):
     """
     Identifies transcripts that align well with enzymes in a custom BLAST database.
-    For now, uses a 50% identity (based on full query length) threshold to identify hits.
-    For now, only outputs the top transcript hit for each gene.
-    See how that works.
+    Retrieves EVERYTHING. This will take a while. several days of running, probably.
 
         Outputs:
             TSV of transcript (gene) hits
-            FASTAs of transcript hits
+            FASTAs of transcript hits <- not implemented - too much space used
     """
+    
+    # This was originally written to filter as well as retrieve EC numbers...don't bother.
+    # Retrieve everything and filter later.
+    # The below is what I was doing before:
+    #For now, uses a 50% identity (based on full subject length) threshold to identify hits.
+    #For now, only outputs the top transcript hit for each gene.
+    #See how that works.
+    
     current_time = str(datetime.datetime.now()).replace("-", "").replace(" ", "_").replace(":", "")
     out_directory = find_path(args.out_directory, action="w", path_type="d")
     script_name = ".".join(__file__.split("/")[-1].split(".")[:-1])
@@ -257,7 +263,7 @@ def main(args):
     blast_results_file = find_path(args.blast_results, action="r", path_type="f")
     blast_results_filename = blast_results_file.split("/")[-1]
     blast_results_df = pd.read_csv(blast_results_file, sep="\t",
-                             names=["qseqid", "sseqid", "qlen", "slen", "nident", "evalue"])
+                             names=["qseqid", "sseqid", "qlen", "slen", "length", "nident", "evalue"])
     print(blast_results_df)
     
     #deseq2_results_file = find_path(args.deseq2_results, action="r", path_type="f")
@@ -294,103 +300,166 @@ def main(args):
     with open(hit_results_file, "w", encoding="utf-8") as hit_results:
         #hit_results.write("gene\ttranscript\tsubject\tsubject_description\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
         #hit_results.write(f"gene\ttranscript\tsubject\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
-        hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
+        #hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
+        hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\t" +
+                          "dom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tperc_qidentity\t" +
+                          "qcover\tslen\tqlen_nt\tmax_qlen_aa\talign_len\n")
 
+        # NOTE: I've changed this a lot. There are several iterations of filtering here.
+        # NOTE: I have decided I just want this to retrieve everything.
+        # NOTE: It will take forever, so I'm going to try to keep a dictionary in memory:
+        # NOTE: {subject:{subject_description:sd,rec_ec_nums:ren,dom_ec_nums:den,rhea_ec_nums:rhen}}
 
-        # {gene1: {features}, gene2: {features}}
-        top_blast_hits = {}
+        print("Finding EC numbers for all BLAST hits...\n", flush=True)
+        print("Be aware that no filtering is being performed here.\n\n",
+              flush=True)
 
-        print("Finding top BLAST hits...\n\n", flush=True)
-
+        # Dictionary of already retrieved UniProt entries.
+        hit_dict = {}
+        
         for i in range(len(blast_results_df)):
             subject = blast_results_df.iloc[i]["sseqid"]
             transcript = blast_results_df.iloc[i]["qseqid"]
             gene = ".".join(transcript.split(".")[:-1])
             e_value = blast_results_df.iloc[i]["evalue"]
-            perc_sidentity = (int(blast_results_df.iloc[i]["nident"])
-                              / int(blast_results_df.iloc[i]["slen"])
-                              * 100)
+            nident = int(blast_results_df.iloc[i]["nident"])
+            slen = int(blast_results_df.iloc[i]["slen"])
+            perc_sidentity = nident / slen * 100
+            qlen_nt = int(blat_results.df.iloc[i]["qlen"])
+            max_qlen_aa = int(qlen_nt / 3)
+            perc_qidentity = nident / max_qlen_aa * 100
+            align_len = int(blast_results.df.iloc[i]["length"])
+            qcover = align_len / max_qlen_aa * 100
 
-            #print(f"Query: {gene}\nSubject: {subject}\n\n", flush=True)
-            #try:
-                #baseMean = deseq2_results_df.loc[gene]["baseMean"]
-                #log2FC = deseq2_results_df.loc[gene]["log2FoldChange"]
-                #padj = deseq2_results_df.loc[gene]["padj"]
-            #except KeyError:
-                #baseMean = "-"
-                #log2FC = "-"
-                #padj = "-"
-                #write_log(log_path, f"{gene} not found in DESeq2 results.\n" +
-                          #"Possibly removed due to low genecounts.\n")
+            print("BLAST result:", flush=True)
+            print(f"gene: {gene}\ntranscript: {transcript}\nsubject: {subject}\n",
+                  flush=True)
 
-            # TODO: REPLACE THIS WITH A DESCRIPTION FROM JSON
-            #subject_description = subjects_df.loc[subject]["protein_name"]
+            # Save to dictionary or retrieve old entry.
+            hit_entry = hit_dict.get(subject)
+            if not hit_entry:
+                json = get_metadata(subject.split("|")[-1])
+        
+                if json:
+                    subject_description = find_description(json)                
+                    rec_ec_nums = parse_json(json, "recommended")
+                    dom_ec_nums = parse_json(json, "domain")
+                    rhea_ec_nums = parse_json(json, "rhea")
+                
+                hit_dict[subject] = {"subject_description":subject_description,
+                                     "rec_ec_nums":rec_ec_nums,
+                                     "dom_ec_nums":dom_ec_nums,
+                                     "rhea_ec_nums":rhea_ec_nums}
+            else:
+                subject_description = hit_entry.get("subject_description")
+                rec_ec_nums = hit_entry.get("rec_ec_nums")
+                dom_ec_nums = hit_entry.get("dom_ec_nums")
+                rhea_ec_nums = hit_entry.get("rhea_ec_nums")
+    
+            hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t" +
+                              f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\t{perc_qidentity}\t" +
+                              f"{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{align_len}\n")
 
-            # dict.get(key) hould return None if key does not exist.
-            # There should be nothing else that evaluates to False in values.
-            if top_blast_hits.get(gene) is None:
+
+
+
+
+
+
+        ## {gene1: {features}, gene2: {features}}
+        #top_blast_hits = {}
+
+        #print("Finding top BLAST hits...\n\n", flush=True)
+
+        #for i in range(len(blast_results_df)):
+            #subject = blast_results_df.iloc[i]["sseqid"]
+            #transcript = blast_results_df.iloc[i]["qseqid"]
+            #gene = ".".join(transcript.split(".")[:-1])
+            #e_value = blast_results_df.iloc[i]["evalue"]
+            #perc_sidentity = (int(blast_results_df.iloc[i]["nident"])
+                              #/ int(blast_results_df.iloc[i]["slen"])
+                              #* 100)
+
+            ##print(f"Query: {gene}\nSubject: {subject}\n\n", flush=True)
+            ##try:
+                ##baseMean = deseq2_results_df.loc[gene]["baseMean"]
+                ##log2FC = deseq2_results_df.loc[gene]["log2FoldChange"]
+                ##padj = deseq2_results_df.loc[gene]["padj"]
+            ##except KeyError:
+                ##baseMean = "-"
+                ##log2FC = "-"
+                ##padj = "-"
+                ##write_log(log_path, f"{gene} not found in DESeq2 results.\n" +
+                          ##"Possibly removed due to low genecounts.\n")
+
+            ## TODO: REPLACE THIS WITH A DESCRIPTION FROM JSON
+            ##subject_description = subjects_df.loc[subject]["protein_name"]
+
+            ## dict.get(key) hould return None if key does not exist.
+            ## There should be nothing else that evaluates to False in values.
+            #if top_blast_hits.get(gene) is None:
+                ##top_blast_hits[gene] = {"transcript":transcript,
+                                        ##"subject":subject,
+                                        ###"subject_description":subject_description,
+                                        ##"e_value":e_value,
+                                        ##"perc_sidentity":perc_sidentity,
+                                        ##"baseMean":baseMean,
+                                        ##"log2FC":log2FC,
+                                        ##"padj":padj}
                 #top_blast_hits[gene] = {"transcript":transcript,
                                         #"subject":subject,
                                         ##"subject_description":subject_description,
                                         #"e_value":e_value,
-                                        #"perc_sidentity":perc_sidentity,
-                                        #"baseMean":baseMean,
-                                        #"log2FC":log2FC,
-                                        #"padj":padj}
-                top_blast_hits[gene] = {"transcript":transcript,
-                                        "subject":subject,
-                                        #"subject_description":subject_description,
-                                        "e_value":e_value,
-                                        "perc_sidentity":perc_sidentity}                
+                                        #"perc_sidentity":perc_sidentity}                
 
-            # Compares top hit with current hit in terms of percent identity, relative to query (gene) length
-            elif top_blast_hits.get(gene).get("perc_sidentity") < perc_sidentity:
+            ## Compares top hit with current hit in terms of percent identity, relative to query (gene) length
+            #elif top_blast_hits.get(gene).get("perc_sidentity") < perc_sidentity:
+                ##top_blast_hits[gene] = {"transcript":transcript,
+                                        ##"subject":subject,
+                                        ###"subject_description":subject_description,
+                                        ##"e_value":e_value,
+                                        ##"perc_sidentity":perc_sidentity,
+                                        ##"baseMean":baseMean,
+                                        ##"log2FC":log2FC,
+                                        ##"padj":padj}
                 #top_blast_hits[gene] = {"transcript":transcript,
                                         #"subject":subject,
                                         ##"subject_description":subject_description,
                                         #"e_value":e_value,
-                                        #"perc_sidentity":perc_sidentity,
-                                        #"baseMean":baseMean,
-                                        #"log2FC":log2FC,
-                                        #"padj":padj}
-                top_blast_hits[gene] = {"transcript":transcript,
-                                        "subject":subject,
-                                        #"subject_description":subject_description,
-                                        "e_value":e_value,
-                                        "perc_sidentity":perc_sidentity}                
+                                        #"perc_sidentity":perc_sidentity}                
 
-        print("Finished finding top BLAST hits.\nIdentifying matches and retrieving EC numbers...\n\n",
-              flush=True)
-        for gene in top_blast_hits:
-            print(f"Working on {gene}...\n\n", flush=True)
-            features = top_blast_hits.get(gene)
-            transcript = features["transcript"]
-            subject = features["subject"]
-            #subject_description = features["subject_description"]
-            subject_description = "placeholder"
-            e_value = features["e_value"]
-            perc_sidentity = features["perc_sidentity"]
-            #baseMean = features["baseMean"]
-            #log2FC = features["log2FC"]
-            #padj = features["padj"]
+        #print("Finished finding top BLAST hits.\nIdentifying matches and retrieving EC numbers...\n\n",
+              #flush=True)
+        #for gene in top_blast_hits:
+            #print(f"Working on {gene}...\n\n", flush=True)
+            #features = top_blast_hits.get(gene)
+            #transcript = features["transcript"]
+            #subject = features["subject"]
+            ##subject_description = features["subject_description"]
+            #subject_description = "placeholder"
+            #e_value = features["e_value"]
+            #perc_sidentity = features["perc_sidentity"]
+            ##baseMean = features["baseMean"]
+            ##log2FC = features["log2FC"]
+            ##padj = features["padj"]
 
-            # PLACEHOLDER: RETRIEVE EC HERE:
-            json = get_metadata(subject.split("|")[-1])
+            ## PLACEHOLDER: RETRIEVE EC HERE:
+            #json = get_metadata(subject.split("|")[-1])
 
-            if json:
-                subject_description = find_description(json)                
-                rec_ec_nums = parse_json(json, "recommended")
-                dom_ec_nums = parse_json(json, "domain")
-                rhea_ec_nums = parse_json(json, "rhea")
+            #if json:
+                #subject_description = find_description(json)                
+                #rec_ec_nums = parse_json(json, "recommended")
+                #dom_ec_nums = parse_json(json, "domain")
+                #rhea_ec_nums = parse_json(json, "rhea")
 
-            hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\n")
+            #hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\n")
             
-            #if perc_sidentity > args.subject_identity_threshold:
-                #if log2FC != "-":
-                    ## Setting a negative pos_log2foldchange and a positive neg_log2foldchange will guarantee all proteins get through.
-                    #if log2FC > args.pos_log2foldchange or log2FC < args.neg_log2foldchange:
-                        ##hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{e_value}\t{perc_sidentity}\t{baseMean}\t{log2FC}\t{padj}\n")
-                        #hit_results.write(f"{gene}\t{transcript}\t{subject}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\t{baseMean}\t{log2FC}\t{padj}\n")
+            ##if perc_sidentity > args.subject_identity_threshold:
+                ##if log2FC != "-":
+                    ### Setting a negative pos_log2foldchange and a positive neg_log2foldchange will guarantee all proteins get through.
+                    ##if log2FC > args.pos_log2foldchange or log2FC < args.neg_log2foldchange:
+                        ###hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{e_value}\t{perc_sidentity}\t{baseMean}\t{log2FC}\t{padj}\n")
+                        ##hit_results.write(f"{gene}\t{transcript}\t{subject}\t{rec_ec_nums}\t{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\t{baseMean}\t{log2FC}\t{padj}\n")
 
 if __name__ == "__main__":
     args = parse_args()
