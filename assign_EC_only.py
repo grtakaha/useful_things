@@ -218,7 +218,17 @@ def parse_args():
                         #default=50)
     parser.add_argument("-o", "--out_directory", type=str,
                         help="Full path of output directory. Must end with \"/\".")
+    parser.add_argument("-qcm", "--qcover_minimum", type=str, default="0",
+                        help="Minimum % query cover (inclusive). qcover = align_len/max_qlen_aa")
+    parser.add_argument("-scm", "--scover_minimum", type=str, default="0",
+                        help="Minimum % subject cover (inclusive). scover = align_len/slen")
     
+    # The following is here just as a reference of what we could use to filter.
+    # Decided that retrieving everything takes far too long... make my own non-conservative threshold.
+    #hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t" +
+                      #f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{nident}\t{perc_sidentity}\t{perc_qidentity}\t" +
+                      #f"{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{align_len}\n")
+
     return parser.parse_args()
 
 #def write_log(log_path, string):
@@ -302,8 +312,8 @@ def main(args):
         #hit_results.write(f"gene\ttranscript\tsubject\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
         #hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
         hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\t" +
-                          "dom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tperc_qidentity\t" +
-                          "qcover\tslen\tqlen_nt\tmax_qlen_aa\talign_len\n")
+                          "dom_ec_nums\trhea_ec_nums\te_value\tnident\tperc_sidentity\tperc_qidentity\t" +
+                          "scover\tqcover\tslen\tqlen_nt\tmax_qlen_aa\talign_len\n")
 
         # NOTE: I've changed this a lot. There are several iterations of filtering here.
         # NOTE: I have decided I just want this to retrieve everything.
@@ -316,7 +326,7 @@ def main(args):
 
         # Dictionary of already retrieved UniProt entries.
         hit_dict = {}
-        
+
         for i in range(len(blast_results_df)):
             subject = blast_results_df.iloc[i]["sseqid"]
             transcript = blast_results_df.iloc[i]["qseqid"]
@@ -330,38 +340,53 @@ def main(args):
             perc_qidentity = nident / max_qlen_aa * 100
             align_len = int(blast_results_df.iloc[i]["length"])
             qcover = align_len / max_qlen_aa * 100
+            scover = align_len / slen * 100
 
             print("BLAST result:", flush=True)
             print(f"gene: {gene}\ntranscript: {transcript}\nsubject: {subject}\n",
                   flush=True)
+            
+            # Non-conservative thresholds to filter out alignments with low coverage.
+            if qcover < args.qcover_minimum or scover < args.scover_minimum:
+                print(f"Low coverage alignment: qcover={qcover}, scover={scover}",
+                      flush=True)
+                print("Skipping...\n")
 
-            # Save to dictionary or retrieve old entry.
-            hit_entry = hit_dict.get(subject)
-            if not hit_entry:
-                json = get_metadata(subject.split("|")[-1])
-        
-                if json:
-                    subject_description = find_description(json)                
-                    rec_ec_nums = parse_json(json, "recommended")
-                    dom_ec_nums = parse_json(json, "domain")
-                    rhea_ec_nums = parse_json(json, "rhea")
-
-                hit_dict[subject] = {"subject_description":subject_description,
-                                     "rec_ec_nums":rec_ec_nums,
-                                     "dom_ec_nums":dom_ec_nums,
-                                     "rhea_ec_nums":rhea_ec_nums}
             else:
-                subject_description = hit_entry.get("subject_description")
-                rec_ec_nums = hit_entry.get("rec_ec_nums")
-                dom_ec_nums = hit_entry.get("dom_ec_nums")
-                rhea_ec_nums = hit_entry.get("rhea_ec_nums")
-    
-            hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t" +
-                              f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{perc_sidentity}\t{perc_qidentity}\t" +
-                              f"{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{align_len}\n")
+                # Save to dictionary or retrieve old entry.
+                hit_entry = hit_dict.get(subject)
+                if not hit_entry:
+                    json = get_metadata(subject.split("|")[-1])
+            
+                    if json:
+                        subject_description = find_description(json)                
+                        rec_ec_nums = parse_json(json, "recommended")
+                        dom_ec_nums = parse_json(json, "domain")
+                        rhea_ec_nums = parse_json(json, "rhea")
+        
+                    hit_dict[subject] = {"subject_description":subject_description,
+                                         "rec_ec_nums":rec_ec_nums,
+                                         "dom_ec_nums":dom_ec_nums,
+                                         "rhea_ec_nums":rhea_ec_nums}
+                else:
+                    print(f"{subject} metadata already found:", flush=True)
+                    subject_description = hit_entry.get("subject_description")
+                    rec_ec_nums = hit_entry.get("rec_ec_nums")
+                    dom_ec_nums = hit_entry.get("dom_ec_nums")
+                    rhea_ec_nums = hit_entry.get("rhea_ec_nums")
+                    print(f"subject_description: {subject_description}\n" +
+                          f"rec_ec_nums: {rec_ec_nums}\n" + 
+                          f"dom_ec_nums: {dom_ec_nums}\n" +
+                          f"rhea_ec_nums: {rhea_ec_nums}\n", flush=True)
+        
+                hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t" +
+                                  f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{nident}\t{perc_sidentity}\t{perc_qidentity}\t" +
+                                  f"{scover}\t{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{align_len}\n")
 
 
-
+        ###PICK UP HERE. LAST PARAMETERS LOOK LIKE THEY'RE NOT PRINTING PROPERLY. FIGURE OUT WHY
+        ### DECIDE HOW TO FILTER THIS
+        
 
 
 
