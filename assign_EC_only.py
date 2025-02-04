@@ -219,9 +219,9 @@ def parse_args():
     parser.add_argument("-o", "--out_directory", type=str,
                         help="Full path of output directory. Must end with \"/\".")
     parser.add_argument("-qcm", "--qcover_minimum", type=str, default="0",
-                        help="Minimum % query cover (inclusive). qcover = align_len/max_qlen_aa")
+                        help="Minimum % query cover (inclusive). qcover = qalign_len/max_qlen_aa")
     parser.add_argument("-scm", "--scover_minimum", type=str, default="0",
-                        help="Minimum % subject cover (inclusive). scover = align_len/slen")
+                        help="Minimum % subject cover (inclusive). scover = salign_len/slen")
     
     # The following is here just as a reference of what we could use to filter.
     # Decided that retrieving everything takes far too long... make my own non-conservative threshold.
@@ -273,7 +273,7 @@ def main(args):
     blast_results_file = find_path(args.blast_results, action="r", path_type="f")
     blast_results_filename = blast_results_file.split("/")[-1]
     blast_results_df = pd.read_csv(blast_results_file, sep="\t",
-                             names=["qseqid", "sseqid", "qlen", "slen", "length", "nident", "evalue"])
+                             names=["qseqid", "sseqid", "qlen", "slen", "qstart", "qend", "sstart", "send", "length", "nident", "evalue"])
     print(blast_results_df)
     
     #deseq2_results_file = find_path(args.deseq2_results, action="r", path_type="f")
@@ -312,8 +312,8 @@ def main(args):
         #hit_results.write(f"gene\ttranscript\tsubject\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\tbaseMean\tlog2FC\tpadj\n")
         #hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\tdom_ec_nums\trhea_ec_nums\te_value\tperc_sidentity\n")
         hit_results.write(f"gene\ttranscript\tsubject\tsubject_description\trec_ec_nums\t" +
-                          "dom_ec_nums\trhea_ec_nums\te_value\tnident\tperc_sidentity\tperc_qidentity\t" +
-                          "scover\tqcover\tslen\tqlen_nt\tmax_qlen_aa\talign_len\n")
+                          "dom_ec_nums\trhea_ec_nums\te_value\tnident\tperc_sidentity\tperc_qidentity\tpident\t" +
+                          "scover\tqcover\tslen\tqlen_nt\tmax_qlen_aa\tsalign_len\tqalign_len\talign_len\n")
 
         # NOTE: I've changed this a lot. There are several iterations of filtering here.
         # NOTE: I have decided I just want this to retrieve everything.
@@ -339,15 +339,27 @@ def main(args):
             max_qlen_aa = int(qlen_nt / 3)
             perc_qidentity = nident / max_qlen_aa * 100
             align_len = int(blast_results_df.iloc[i]["length"])
-            qcover = align_len / max_qlen_aa * 100
-            scover = align_len / slen * 100
+            # pident is reported in typical BLAST outputs...
+            pident = nident / align_len * 100
+            qstart = int(blast_results_df.iloc[i]["qstart"])
+            qend = int(blast_results_df.iloc[i]["qend"])
+            qalign_len = int((qend - qstart + 1) / 3)
+            sstart = int(blast_results_df.iloc[i]["sstart"])
+            send = int(blast_results_df.iloc[i]["send"])
+            salign_len = int(send - sstart + 1)
+            # align_len was replaced by individual alignment lengths:
+            # qalign_len = # of query residues involved in alignment
+            # salign_len = # of subject residues involved in alignment
+            # This is more meaningful to me than general alignment length is.
+            qcover = qalign_len / max_qlen_aa * 100
+            scover = salign_len / slen * 100
 
             print("BLAST result:", flush=True)
             print(f"gene: {gene}\ntranscript: {transcript}\nsubject: {subject}\n",
                   flush=True)
             
             # Non-conservative thresholds to filter out alignments with low coverage.
-            if qcover < args.qcover_minimum or scover < args.scover_minimum:
+            if qcover < float(args.qcover_minimum) or scover < float(args.scover_minimum):
                 print(f"Low coverage alignment: qcover={qcover}, scover={scover}",
                       flush=True)
                 print("Skipping...\n")
@@ -380,8 +392,8 @@ def main(args):
                           f"rhea_ec_nums: {rhea_ec_nums}\n", flush=True)
         
                 hit_results.write(f"{gene}\t{transcript}\t{subject}\t{subject_description}\t{rec_ec_nums}\t" +
-                                  f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{nident}\t{perc_sidentity}\t{perc_qidentity}\t" +
-                                  f"{scover}\t{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{align_len}\n")
+                                  f"{dom_ec_nums}\t{rhea_ec_nums}\t{e_value}\t{nident}\t{perc_sidentity}\t{perc_qidentity}\t{pident}\t" +
+                                  f"{scover}\t{qcover}\t{slen}\t{qlen_nt}\t{max_qlen_aa}\t{salign_len}\t{qalign_len}\t{align_len}\n")
 
 
         ###PICK UP HERE. LAST PARAMETERS LOOK LIKE THEY'RE NOT PRINTING PROPERLY. FIGURE OUT WHY
