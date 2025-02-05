@@ -298,9 +298,13 @@ def main(args):
     print(transcripts_df)
     
     out_directory = find_path(args.out_directory, action="w", path_type="d")
-    print("\nInputs:\n") # Prints a newline
-    print(f"blast_results: {blast_results_file}\ntranscripts: {transcripts_file}")
-    print(f"out_directory: {out_directory}\n")    
+    
+    qcover_minimum = args.qcover_minimum
+    scover_minimum = args.scover_minimum
+    print("\nInputs:\n", flush=True) # Prints a newline
+    print(f"qcover_minimum: {qcover_minimum}\nscover_minimum: {scover_minimum}", flush=True)
+    print(f"blast_results: {blast_results_file}\ntranscripts: {transcripts_file}", flush=True)
+    print(f"out_directory: {out_directory}\n", flush=True)    
     
     # TODO: parse current_time
     hit_results_file = find_path(f"{out_directory}/EC_results.{current_time}.tsv", action="w", path_type="f")
@@ -359,7 +363,7 @@ def main(args):
                   flush=True)
             
             # Non-conservative thresholds to filter out alignments with low coverage.
-            if qcover < float(args.qcover_minimum) or scover < float(args.scover_minimum):
+            if qcover < float(qcover_minimum) or scover < float(scover_minimum):
                 print(f"Low coverage alignment: qcover={qcover}, scover={scover}",
                       flush=True)
                 print("Skipping...\n")
