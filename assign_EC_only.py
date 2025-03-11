@@ -148,7 +148,9 @@ def get_metadata(mid):
             mid (str): A UniProt ID.
 
         Returns:
-            response (str): A JSON of the given ID's metadata.
+            response_metadata.json() (dict): A dictionary parsed
+                                             from the response of
+                                             a requests library request.
     """
 
     # TODO: Consider returning only annotations.
@@ -186,6 +188,7 @@ def get_metadata(mid):
 
     print(f"Metadata retrieved for {mid}.\n", flush=True)
 
+    # Returns a dictionary of the response
     return response_metadata.json()
 
 def parse_args():
